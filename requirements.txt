@@ -1,0 +1,28 @@
+# Web 服务
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# 数据源
+clickhouse-connect
+
+# 统计 / 空间分析(计算几何)
+pandas
+geopandas
+shapely
+pyproj
+scikit-learn
+scipy
+
+# 渲染(出图)
+plotly
+kaleido
+
+# LLM 调用
+httpx
+
+# 可选(按需启用)
+# esda          # Getis-Ord Gi* 冷热点
+# libpysal      # 空间权重(配合 esda)
+# alphashape    # alpha-shape 影响范围包络

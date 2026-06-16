@@ -1,0 +1,23 @@
+# 凭据 / 配置(切勿提交)
+.env
+docs/chconf.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 渲染产物(示例图保留在版本库,运行期导出忽略)
+/output/
+*.tmp
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

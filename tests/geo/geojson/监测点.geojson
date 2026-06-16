@@ -1,0 +1,245 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点1",
+        "lng": 98.52416667,
+        "lat": 37.10668056
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.52416667,
+          37.10668056
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点2",
+        "lng": 98.23319444,
+        "lat": 37.00858333
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.23319444,
+          37.00858333
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点3",
+        "lng": 98.38955556,
+        "lat": 37.01780556
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.38955556,
+          37.01780556
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点4",
+        "lng": 98.35761111,
+        "lat": 36.97516667
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.35761111,
+          36.97516667
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点5",
+        "lng": 98.62416667,
+        "lat": 37.01027778
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.62416667,
+          37.01027778
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点6",
+        "lng": 98.67555556,
+        "lat": 37.00722222
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.67555556,
+          37.00722222
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点7",
+        "lng": 98.52886111,
+        "lat": 36.99577778
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.52886111,
+          36.99577778
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点8",
+        "lng": 99.07611111,
+        "lat": 36.75555556
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          99.07611111,
+          36.75555556
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点9",
+        "lng": 99.28419444,
+        "lat": 36.76611111
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          99.28419444,
+          36.76611111
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点10",
+        "lng": 98.35055556,
+        "lat": 37.15138889
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.35055556,
+          37.15138889
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点11",
+        "lng": 99.02972222,
+        "lat": 36.88194444
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          99.02972222,
+          36.88194444
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点12",
+        "lng": 99.09361111,
+        "lat": 36.865
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          99.09361111,
+          36.865
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点13",
+        "lng": 98.37286111,
+        "lat": 37.06608333
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.37286111,
+          37.06608333
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点14",
+        "lng": 98.67519444,
+        "lat": 36.96544444
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.67519444,
+          36.96544444
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点15",
+        "lng": 98.67060833,
+        "lat": 36.97169167
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          98.67060833,
+          36.97169167
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "监测点16",
+        "lng": 99.49768611,
+        "lat": 37.02056667
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          99.49768611,
+          37.02056667
+        ]
+      }
+    }
+  ]
+}

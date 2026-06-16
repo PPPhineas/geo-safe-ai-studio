@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>灾圈监测点风险研判 · 报告生成</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --line:#e3e6ea; --pri:#2563eb; --ink:#1f2430; --mut:#6b7280; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Microsoft YaHei","Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:#0f172a; color:#fff; padding:18px 24px; }
+  header h1 { margin:0; font-size:18px; font-weight:600; }
+  header p { margin:4px 0 0; font-size:12px; color:#94a3b8; }
+  .wrap { max-width:1080px; margin:20px auto; padding:0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:16px; }
+  .card h2 { margin:0 0 12px; font-size:15px; }
+  .step { color:var(--pri); font-weight:700; margin-right:6px; }
+  .drop { border:2px dashed var(--line); border-radius:10px; padding:26px; text-align:center; color:var(--mut);
+          cursor:pointer; transition:.15s; }
+  .drop.hover { border-color:var(--pri); background:#eff4ff; color:var(--pri); }
+  .drop input { display:none; }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  label.f { font-size:13px; color:var(--mut); }
+  input[type=text] { border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-size:13px; min-width:220px; }
+  button { background:var(--pri); color:#fff; border:0; border-radius:8px; padding:10px 18px; font-size:14px;
+           cursor:pointer; font-weight:600; }
+  button:disabled { background:#9db4e8; cursor:not-allowed; }
+  button.ghost { background:#eef1f6; color:var(--ink); }
+  .meta { font-size:13px; color:var(--mut); margin-top:10px; line-height:1.7; }
+  .meta b { color:var(--ink); }
+  .pill { display:inline-block; background:#eef2ff; color:#3730a3; border-radius:20px; padding:2px 10px; font-size:12px; margin-right:6px; }
+  .hidden { display:none; }
+  .spinner { width:18px; height:18px; border:3px solid #c7d2fe; border-top-color:var(--pri); border-radius:50%;
+             display:inline-block; vertical-align:middle; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .err { color:#b91c1c; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:10px 12px; font-size:13px; white-space:pre-wrap; }
+  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+  .gallery figure { margin:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#fff; }
+  .gallery img { width:100%; display:block; }
+  .gallery figcaption { font-size:12px; color:var(--mut); padding:6px 8px; border-top:1px solid var(--line); }
+  .preview { border:1px solid var(--line); border-radius:8px; padding:16px 20px; max-height:560px; overflow:auto; background:#fff; }
+  .preview img { max-width:100%; }
+  .preview table { border-collapse:collapse; font-size:12px; }
+  .preview th, .preview td { border:1px solid var(--line); padding:3px 7px; }
+  .summary { display:flex; gap:18px; flex-wrap:wrap; margin-bottom:12px; }
+  .stat { background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:10px 16px; min-width:120px; }
+  .stat .n { font-size:22px; font-weight:700; }
+  .stat .l { font-size:12px; color:var(--mut); }
+  .stream { background:#0f172a; color:#cbd5e1; font-family:Consolas,"Courier New",monospace; font-size:12px;
+            line-height:1.6; border-radius:8px; padding:12px 14px; max-height:280px; overflow:auto;
+            white-space:pre-wrap; word-break:break-word; }
+  .stream.think { color:#fcd34d; }
+  .stagelog div { font-size:12.5px; color:#475569; padding:1px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>灾圈监测点地质灾害风险研判 · 报告生成</h1>
+  <p>选取灾圈 GeoJSON → 生成报告 → 预览 / 下载　|　地灾预警 AI Studio</p>
+</header>
+
+<div class="wrap">
+
+  <!-- Step 1: 选取灾圈文件 -->
+  <div class="card">
+    <h2><span class="step">①</span>选取灾圈文件（GeoJSON / Polygon）</h2>
+    <div class="drop" id="drop">
+      <input type="file" id="file" accept=".geojson,.json,application/geo+json" />
+      <div id="dropText">点击选择，或将 <code>.geojson</code> 文件拖到此处</div>
+    </div>
+    <div class="meta" id="fileInfo"></div>
+  </div>
+
+  <!-- Step 2: 生成 -->
+  <div class="card">
+    <h2><span class="step">②</span>生成报告</h2>
+    <div class="row">
+      <label class="f">报告编号(可选)</label>
+      <input type="text" id="reportId" placeholder="留空则自动生成" />
+      <button id="genBtn" disabled>生成报告</button>
+      <span id="status" class="meta"></span>
+    </div>
+    <div class="meta">提示：灾圈很大时（上万点）研判与出图需 1–2 分钟，请耐心等待。</div>
+    <div id="error" class="err hidden" style="margin-top:12px"></div>
+  </div>
+
+  <!-- 流式研判过程 -->
+  <div class="card hidden" id="streamCard">
+    <h2><span class="step">··</span>AI 研判过程（实时流式）</h2>
+    <div id="stageLog" class="stagelog" style="margin-bottom:10px"></div>
+    <div id="thinkWrap" class="hidden">
+      <h3 style="font-size:13px;margin:10px 0 4px;color:#6b7280">💭 模型思考过程</h3>
+      <div id="thinkPanel" class="stream think"></div>
+    </div>
+    <h3 style="font-size:13px;margin:12px 0 4px;color:#6b7280">📝 研判输出（JSON，逐字生成）</h3>
+    <div id="contentPanel" class="stream"></div>
+  </div>
+
+  <!-- Step 3: 结果 -->
+  <div class="card hidden" id="result">
+    <h2><span class="step">③</span>结果 · 预览与下载</h2>
+    <div class="summary" id="summary"></div>
+    <div class="row" style="margin-bottom:16px">
+      <button id="dlZip">⬇ 下载完整报告包 (.zip)</button>
+      <span class="meta">含 report.md（图片/附件链接已改为相对路径，可离线查看）+ 图件 + CSV + 研判 JSON</span>
+    </div>
+    <div class="row" id="attachments" style="margin-bottom:16px"></div>
+
+    <h3 style="font-size:14px;margin:6px 0">图件</h3>
+    <div class="gallery" id="gallery"></div>
+
+    <h3 style="font-size:14px;margin:18px 0 6px">报告预览</h3>
+    <div id="previewHost"></div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let parsedGeometry = null;   // {kind:'polygon', coordinates:[[lon,lat],...]}
+let lastReport = null;       // {report_markdown, judgement, ...}
+
+// ---------- 选取文件 ----------
+const drop = $("drop"), fileInput = $("file");
+drop.addEventListener("click", () => fileInput.click());
+["dragenter","dragover"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add("hover"); }));
+["dragleave","drop"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove("hover"); }));
+drop.addEventListener("drop", ev => { const f = ev.dataTransfer.files[0]; if (f) handleFile(f); });
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+function extractPolygon(gj) {
+  let geom = gj;
+  if (gj.type === "FeatureCollection") {
+    if (!gj.features || !gj.features.length) throw new Error("FeatureCollection 为空");
+    geom = gj.features[0].geometry;
+  } else if (gj.type === "Feature") {
+    geom = gj.geometry;
+  }
+  if (!geom || !geom.type) throw new Error("未找到 geometry 对象");
+  let ring;
+  if (geom.type === "Polygon") ring = geom.coordinates[0];
+  else if (geom.type === "MultiPolygon") ring = geom.coordinates[0][0];
+  else throw new Error("几何类型须为 Polygon / MultiPolygon，当前为：" + geom.type);
+  const coords = ring.map(p => [Number(p[0]), Number(p[1])]);
+  if (coords.length < 3) throw new Error("多边形顶点不足 3 个");
+  return { kind: "polygon", coordinates: coords, _name: gj.features?.[0]?.properties?.name };
+}
+
+function handleFile(file) {
+  hideError();
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const gj = JSON.parse(reader.result);
+      parsedGeometry = extractPolygon(gj);
+      const name = parsedGeometry._name ? `（${parsedGeometry._name}）` : "";
+      $("fileInfo").innerHTML =
+        `已载入 <b>${file.name}</b>${name}　` +
+        `<span class="pill">多边形</span><span class="pill">${parsedGeometry.coordinates.length} 个顶点</span>`;
+      $("genBtn").disabled = false;
+    } catch (e) {
+      parsedGeometry = null; $("genBtn").disabled = true;
+      $("fileInfo").textContent = "";
+      showError("解析失败：" + e.message);
+    }
+  };
+  reader.onerror = () => showError("读取文件失败");
+  reader.readAsText(file);
+}
+
+// ---------- 生成报告 ----------
+$("genBtn").addEventListener("click", generate);
+
+async function generate() {
+  if (!parsedGeometry) return;
+  hideError();
+  $("genBtn").disabled = true;
+  $("result").classList.add("hidden");
+  // 重置流式面板
+  $("streamCard").classList.remove("hidden");
+  $("stageLog").innerHTML = "";
+  $("thinkWrap").classList.add("hidden");
+  $("thinkPanel").textContent = "";
+  $("contentPanel").textContent = "";
+  const t0 = Date.now();
+  const timer = setInterval(() => { $("status").innerHTML =
+    `<span class="spinner"></span> 处理中… ${((Date.now()-t0)/1000).toFixed(0)} 秒`; }, 250);
+  try {
+    const body = { geometry: { kind: "polygon", coordinates: parsedGeometry.coordinates },
+                   report_id: $("reportId").value.trim() || null };
+    const resp = await fetch("/api/v1/risk-report/stream", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!resp.ok) { const t = await resp.text(); throw new Error(`HTTP ${resp.status}\n${t}`); }
+    await consumeSSE(resp, t0);
+  } catch (e) {
+    showError("生成失败：" + e.message);
+  } finally {
+    clearInterval(timer);
+    $("genBtn").disabled = false;
+  }
+}
+
+// 逐块读取 SSE,按空行切分事件
+async function consumeSSE(resp, t0) {
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      if (raw.trim()) handleEvent(parseSSE(raw), t0);
+    }
+  }
+}
+
+function parseSSE(raw) {
+  let event = "message", data = "";
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) data += line.slice(5).replace(/^ /, "");
+  }
+  let payload = {};
+  try { payload = JSON.parse(data); } catch (_) {}
+  return { event, payload };
+}
+
+function handleEvent({ event, payload }, t0) {
+  const tail = (el) => { el.scrollTop = el.scrollHeight; };
+  switch (event) {
+    case "stage":
+      appendStage("• " + (payload.msg || payload.stage || ""));
+      break;
+    case "reasoning":
+      $("thinkWrap").classList.remove("hidden");
+      $("thinkPanel").textContent += payload.text || ""; tail($("thinkPanel"));
+      break;
+    case "content":
+      $("contentPanel").textContent += payload.text || ""; tail($("contentPanel"));
+      break;
+    case "validation":
+      appendStage(payload.ok ? "✅ 研判校验通过"
+        : "⚠️ 校验未过：" + (payload.errors || []).join("；") + "（将重生成）");
+      break;
+    case "warn":
+      appendStage("⚠️ " + payload.msg);
+      break;
+    case "done":
+      $("status").innerHTML = `✅ 完成，用时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒`;
+      lastReport = payload;
+      renderResult(payload);
+      break;
+    case "error":
+      showError("生成失败：" + payload.msg);
+      break;
+  }
+}
+
+function appendStage(msg) {
+  const div = document.createElement("div");
+  div.textContent = msg;
+  $("stageLog").appendChild(div);
+}
+
+// ---------- 渲染结果 ----------
+function renderResult(data) {
+  $("result").classList.remove("hidden");
+
+  // 摘要
+  const level = (data.judgement && data.judgement.overall_risk && data.judgement.overall_risk.level) || "—";
+  $("summary").innerHTML = `
+    <div class="stat"><div class="n">${data.point_count}</div><div class="l">圈内有效监测点</div></div>
+    <div class="stat"><div class="n">${level}</div><div class="l">整体风险等级</div></div>
+    <div class="stat"><div class="n">${Object.keys(data.figures||{}).length}</div><div class="l">图件数</div></div>
+    <div class="stat"><div class="n">${(data.report_markdown.length/1024).toFixed(0)}K</div><div class="l">报告字符</div></div>`;
+
+  // 附件(如点位过多时的完整清单 CSV)
+  const at = $("attachments"); at.innerHTML = "";
+  const atts = data.attachments || {};
+  for (const [name, url] of Object.entries(atts)) {
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.style.textDecoration = "none";
+    a.innerHTML = `<button class="ghost">📎 下载附件：${name}</button>`;
+    at.appendChild(a);
+  }
+  if (Object.keys(atts).length) {
+    const note = document.createElement("span");
+    note.className = "meta";
+    note.textContent = "（点位较多，完整监测点清单已作为 CSV 附件）";
+    at.appendChild(note);
+  }
+
+  // 图件
+  const g = $("gallery"); g.innerHTML = "";
+  const figs = data.figures || {};
+  if (!Object.keys(figs).length) g.innerHTML = `<div class="meta">无图件（可能 point_count=0 或渲染降级）。</div>`;
+  for (const [key, url] of Object.entries(figs)) {
+    const fig = document.createElement("figure");
+    fig.innerHTML = `<img src="${url}" alt="${key}" loading="lazy"/><figcaption>${key}</figcaption>`;
+    g.appendChild(fig);
+  }
+
+  // 预览（大报告跳过自动渲染，避免卡死浏览器）
+  const host = $("previewHost"); host.innerHTML = "";
+  const md = data.report_markdown;
+  if (md.length > 400000) {
+    host.innerHTML = `<div class="meta">报告较大（${(md.length/1024/1024).toFixed(2)} MB，含上万行清单/附录），
+      已跳过自动渲染以免卡顿。可<a href="#" id="forceRender">强制渲染预览</a>，或直接下载。</div>`;
+    $("forceRender").addEventListener("click", ev => { ev.preventDefault(); host.innerHTML=""; mountPreview(host, md); });
+  } else {
+    mountPreview(host, md);
+  }
+}
+
+function mountPreview(host, md) {
+  const div = document.createElement("div");
+  div.className = "preview";
+  div.innerHTML = (window.marked ? window.marked.parse(md) : `<pre>${escapeHtml(md)}</pre>`);
+  host.appendChild(div);
+}
+
+// ---------- 下载 ----------
+$("dlZip").addEventListener("click", () => {
+  if (!lastReport) return;
+  // 后端按 report_id 现打包:report.md(相对链接)+ figures/ + 附件 + judgement.json
+  const a = document.createElement("a");
+  a.href = `/api/v1/risk-report/${encodeURIComponent(lastReport.report_id)}/bundle`;
+  a.download = `${lastReport.report_id}.zip`;
+  document.body.appendChild(a); a.click(); a.remove();
+});
+
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  a.remove(); URL.revokeObjectURL(url);
+}
+
+// ---------- 工具 ----------
+function showError(msg) { const e = $("error"); e.textContent = msg; e.classList.remove("hidden"); }
+function hideError() { $("error").classList.add("hidden"); }
+function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
+</script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+【DB_ID】 dwd_gh_v1
+【Schema】
+# Table: dwd_gh_v1.dwd_monitor_equip_info_view, 监测设备信息表
+[
+(device_code:STRING, 设备编号),
+(device_sn:NULLABLE(STRING), 设备SN),
+(device_name:NULLABLE(STRING), 设备名称),
+(device_longitude:NULLABLE(STRING), 设备经度 (CGCS2000)),
+(device_latitude:NULLABLE(STRING), 设备纬度 (CGCS2000)),
+(device_type:NULLABLE(STRING), 监测类型 (DZ-DV-AA001~AA003)),
+(province_name:NULLABLE(STRING), 省名称),
+(province_code:NULLABLE(STRING), 省份编码 (前2位+0000)),
+(city_code:NULLABLE(STRING), 市编码 (前4位+00)),
+(city_name:NULLABLE(STRING), 市名称),
+(county_name:NULLABLE(STRING), 县名称),
+(county_code:NULLABLE(STRING), 县编码),
+(manufacturer:NULLABLE(STRING), 厂商名称),
+(warning_level:NULLABLE(STRING), 最新预警状态 (蓝色预警/黄色预警/橙色预警/红色预警)),
+(monitor_point_name:NULLABLE(STRING), 监测点名称),
+(etl_time:DATETIME, ETL加工时间),
+(monitor_table:NULLABLE(STRING), 监测点名称),
+(monitor_column:NULLABLE(STRING), 监测点名称),
+(monitor_type:Nullable(String), 设备监测类型),
+(device_status:NULLABLE, 设备状态),
+(cm_usable:STRING, 软删除标示)
+]
+---
+【DB_ID】 dwd_gh_v1
+【Schema】
+# Table: dwd_gh_v1.dwd_monitor_point_info_view, 监测点信息表
+[
+(monitor_point_code:STRING, 国家编号),
+(monitor_point_name:NULLABLE(STRING), 监测点名称),
+(monitor_point_type:NULLABLE(STRING), 灾害类型),
+(longitude:NULLABLE(DECIMAL(11, 6)), 经度),
+(latitude:NULLABLE(DECIMAL(10, 6)), 纬度),
+(elevation:NULLABLE(STRING), 高程),
+(province_name:NULLABLE(STRING), 省名称),
+(province_code:NULLABLE(STRING), 省份编码),
+(city_code:NULLABLE(STRING), 市编码),
+(city_name:NULLABLE(STRING), 市名称),
+(county_name:NULLABLE(STRING), 县名称),
+(county_code:NULLABLE(STRING), 县编码),
+(location:NULLABLE(STRING), 地理位置),
+(construction_unit:NULLABLE(STRING), 施工单位),
+(manufacturer:NULLABLE(STRING), 设备厂商),
+(yw_unit:NULLABLE(STRING), 监测运维单位),
+(is_hex:UINT8, 是否核销(0=否,1=是)),
+(lithology:NULLABLE(STRING), 岩性),
+(remote_sensing:NULLABLE(STRING), 遥感识别),
+(avg_slope:NULLABLE(STRING), 平均坡度),
+(threaten_object:NULLABLE(STRING), 威胁对象),
+(hazard_length:NULLABLE(STRING), 长(米)),
+(hazard_width:NULLABLE(STRING), 宽(米)),
+(hazard_thickness:NULLABLE(STRING), 厚度(米)),
+(hazard_volume:NULLABLE(STRING), 体积(立方米)),
+(watershed_area:NULLABLE(STRING), 流域面积),
+(gully_length:NULLABLE(STRING), 沟长),
+(threaten_population:NULLABLE(STRING), 威胁人数),
+(threaten_residents:NULLABLE(STRING), 威胁户数),
+(threaten_assets:NULLABLE(DECIMAL(18, 2)), 威胁财产(万元)),
+(induce_factors:NULLABLE(STRING), 诱发因素),
+(current_status:NULLABLE(STRING), 现状和发展趋势简述),
+(model_params:NULLABLE(STRING), 三维模型参数),
+(label:NULLABLE(STRING), 标签),
+(build_year:NULLABLE(STRING), 建设年份),
+(warning_level:NULLABLE(STRING), 预警等级),
+(model_file:NULLABLE(STRING), 三维模型),
+(dom_file:NULLABLE(STRING), 正射影像),
+(is_hidden_danger:NULLABLE(UINT8), 是否为隐患识别(0=否,1=是)),
+(tbsj:DATETIME, ETL处理时间),
+(isriskprevention:NULLABLE(STRING), 是否风险防范区),
+(scale:NULLABLE(STRING), 规模等级(小/中/大/特大))
+]
+---
+【DB_ID】 dwd_gh_v1
+【Schema】
+# Table: dwd_gh_v1.dwd_monitor_sensor_info_view, 传感器信息表
+[
+(sensor_code:STRING, 传感器编号),
+(status:NULLABLE(STRING), 状态 (0=正常, 1=停用)),
+(sensor_type:NULLABLE(STRING), 传感器类型 (L1_LF_1/L3_YL_1 等)),
+(monitor_point_name:NULLABLE(STRING), 监测点名称),
+(manufacturer:NULLABLE(STRING), 厂商名称),
+(province_name:NULLABLE(STRING), 省名称),
+(province_code:NULLABLE(STRING), 省份编码 (前2位+0000)),
+(city_code:NULLABLE(STRING), 市编码 (前4位+00)),
+(city_name:NULLABLE(STRING), 市名称),
+(county_name:NULLABLE(STRING), 县名称),
+(county_code:NULLABLE(STRING), 县编码),
+(is_cancelled:NULLABLE(STRING), 是否注销 (0=否, 1=是)),
+(build_batch:NULLABLE(STRING), 建设批次 (建设年份)),
+(longitude:NULLABLE(STRING), 经度 (CGCS2000)),
+(latitude:NULLABLE(STRING), 纬度 (CGCS2000)),
+(etl_time:DATETIME, ETL加工时间)
+(sensor_type_name:Nullable(String), 传感器类型中文名称)
+]
+---
+【DB_ID】 dwd_gh_v1
+【Schema】
+# Table: dwd_gh_v1.dwd_monitor_warning_info_view,预警信息表
+[
+(warning_code:STRING, 预警编号),
+(warning_time:Nullable(DateTime), 预警时间),
+(warning_level:Nullable(String), 预警等级 (1蓝色/2黄色/3橙色/4红色)),
+(warning_status:Nullable(String), 预警状态 (0=待处理, 1=处理中, 2=已关闭)),
+(warning_desc:Nullable(String), 预警描述),
+(is_false_alarm:Nullable(String), 是否误报 (1=是, 2=否)),
+(monitor_point_code:Nullable(String), 监测点编号),
+(monitor_point_name:Nullable(String), 监测点名称),
+(monitor_point_type:Nullable(String), 监测点类型 (滑坡/崩塌/泥石流等)),
+(device_type:Nullable(String), 设备类型 (加速度/地表位移/裂缝等)),
+(warning_value:Nullable(String), 预警数值 (预警阈值)),
+(warning_model:Nullable(String), 预警模型 (预警模型公式)),
+(province_name:Nullable(String), 省名称),
+(province_code:Nullable(String), 省份编码 (前2位+0000)),
+(city_code:Nullable(String), 市编码 (前4位+00)),
+(city_name:Nullable(String), 市名称),
+(county_name:Nullable(String), 县名称),
+(county_code:Nullable(String), 县编码),
+(location:Nullable(String), 地理位置),
+(latitude:Nullable(String), 纬度 (CGCS2000)),
+(longitude:Nullable(String), 经度 (CGCS2000)),
+(etl_time:DATETIME, ETL加工时间)
+]
+---
+【DB_ID】 ods_gh_v1
+【Schema】
+# Table: ods_gh_v1.datapointsL1, 变形监测传感器数据
+[
+(DeviceSn:STRING, 设备SN),
+(SensorCode:STRING, 传感器编码),
+(Time:DATETIME64, 数据监测时间),
+(value:NULLABLE(FLOAT32), 裂缝张开度，表明位移随时间的累计变量值),
+(gpsTotalX:NULLABLE(FLOAT64), 与GNSS监测台站初始位置差值,X方向位移),
+(gpsTotalY:NULLABLE(FLOAT64), 与GNSS监测台站初始位置差值,Y方向位移),
+(gpsTotalZ:NULLABLE(FLOAT64), 与GNSS监测台站初始位置差值,Z方向位移),
+(dispsX:NULLABLE(FLOAT64), 顺滑动方向随时间的累计变形量),
+(dispsY:NULLABLE(FLOAT64), 垂直坡面方向随时间的累计变形),
+(gX:NULLABLE(FLOAT64), 传感器X轴方向加速度及瞬间冲击加速度),
+(gY:NULLABLE(FLOAT64), 传感器Y轴方向加速度及瞬间冲击加速度),
+(gZ:NULLABLE(FLOAT64), 传感器Z轴方向加速度及瞬间冲),
+(X:NULLABLE(FLOAT64), 传感器X轴方向倾斜角度),
+(Y:NULLABLE(FLOAT64), 传感器Y轴方向倾斜角度),
+(Z:NULLABLE(FLOAT64), 传感器Z轴的自转角度),
+(angle:NULLABLE(FLOAT64), x、y轴合成方位角上的倾斜角度大小),
+(AZI:NULLABLE(FLOAT64), X轴在水平面的投影与磁北的夹角),
+(PLX:NULLABLE(FLOAT64), 传感器X轴振动频率),
+(PLY:NULLABLE(FLOAT64), 传感器Y轴振动频率),
+(PLZ:NULLABLE(FLOAT64), 传感器Z轴振动频率),
+(SJX:NULLABLE(FLOAT64), 传感器初始位置为原点，X轴瞬间位移),
+(SJY:NULLABLE(FLOAT64), 传感器初始位置为原点，Y轴瞬间位移),
+(SJZ:NULLABLE(FLOAT64), 传感器初始位置为原点，Z轴瞬间位移),
+(SJValue:NULLABLE(FLOAT64), 振动传感器初始位置为原点，合方向上瞬间位移),
+(gpsInitial:NULLABLE(FLOAT64), 地表位移基站),
+(tbsj:DATETIME64, 入库时间)
+]
+---
+【DB_ID】 ods_gh_v1
+【Schema】
+# Table: ods_gh_v1.datapointsL2, 物理场监测传感器数据
+[
+(DeviceSn:STRING, 设备SN),
+(SensorCode:STRING, 传感器编码),
+(Time:DATETIME64, 数据监测时间),
+(value:NULLABLE(FLOAT32), 位移),
+(OSP:NULLABLE(FLOAT64), 主要指由泥石流运动产生且在空气中传播的频率在20Hz以下的次声原始声压),
+(VSP:NULLABLE(FLOAT64), 有效声压),
+(freq:NULLABLE(FLOAT64), 频率),
+(amplitude:NULLABLE(FLOAT64), 幅度,信号波形的最大振幅值,表明声发射事件的大小),
+(energy:NULLABLE(FLOAT64), 能量,信号检波包络线下的面积,反映事件的相对能量或强度),
+(ringing:NULLABLE(FLOAT64), 振铃计数,信号在一定时间内越过预置门槛的次数,反映声发射活动的总量和频度),
+(risetime:NULLABLE(FLOAT64), 上升时间,信号第一次跨过门槛至最大振幅经历的时间间隔),
+(risecount:NULLABLE(FLOAT64), 上升计数,信号在上升时间内越过预置门槛的次数),
+(duration:NULLABLE(FLOAT64), 持续时间,信号第一次跨过门槛至最终降至门槛经历的时间间隔),
+(arrivaltime:NULLABLE(FLOAT64), 到达时间,一个声发射波到达传感器的时),
+(RMS:NULLABLE(FLOAT64), 有效值电压,采样时间内信号的均方根值),
+(ASL:NULLABLE(FLOAT64), 平均信号电平),
+(tbsj:DATETIME64, 入库时间)
+]
+---
+【DB_ID】 ods_gh_v1
+【Schema】
+# Table: ods_gh_v1.datapointsL3, 影响因素监测传感器数据
+[
+(DeviceSn:STRING, 设备SN),
+(SensorCode:STRING, 传感器编码),
+(Time:DATETIME64, 数据监测时间),
+(value:NULLABLE(FLOAT32), 表示一次数据上报间隔内的降雨量),
+(totalValue:NULLABLE(FLOAT64), 当日雨量累积值),
+(temp:NULLABLE(FLOAT64), 温度),
+(tbsj:DATETIME64, 入库时间)
+]
+---
+【DB_ID】 ods_gh_v1
+【Schema】
+# Table: ods_gh_v1.datapointsL4, 宏观现象监测传感器数据
+[
+(DeviceSn:STRING, 设备SN),
+(SensorCode:STRING, 传感器编码),
+(Time:DATETIME64, 数据监测时间),
+(value:NULLABLE(FLOAT32), 值),
+(x:NULLABLE(FLOAT64), 相对于原来位置产生的x位移),
+(y:NULLABLE(FLOAT64), 相对于原来位置产生的y位移),
+(X:NULLABLE(FLOAT64), X轴方向坐标),
+(Y:NULLABLE(FLOAT64), Y轴方向坐标),
+(Z:NULLABLE(FLOAT64), Z轴方向坐标),
+(speed:NULLABLE(FLOAT64), 监测物体移动速度),
+(tbsj:DATETIME64, 入库时间)
+]

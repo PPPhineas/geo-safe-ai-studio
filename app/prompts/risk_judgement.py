@@ -1,0 +1,102 @@
+"""风险研判 prompt(System + User)。
+
+权威来源:docs/灾圈监测点风险研判提示词.md。**修改 prompt 须与该文档同步**,
+并连带检查 配套装配与渲染说明.md(JSON→章节映射)与 报告成稿模板.md(占位符)——三者强耦合。
+
+SYSTEM_PROMPT 固定不变(角色 + 全局护栏);build_user_prompt 注入占位符。
+"""
+
+from __future__ import annotations
+
+SYSTEM_PROMPT: str = """你是一名资深地质灾害风险研判专家。你的任务是：基于系统提供的、已经核算好的监测数据，对一个灾害圈（灾圈）范围内的地质灾害风险做出客观、专业、可溯源的研判，并按指定 JSON 结构输出。
+
+【必须遵守的硬性规则】
+1. 数字不可改动：输入中"既定事实"部分的所有统计数字均已由系统精确核算，你只能直接引用，严禁自行计算、估算、求和、求比例或改写任何数字。
+2. 结论必须可溯源：每一条关于具体灾害点的研判或建议，必须标注对应的监测点国家编号（monitor_point_code）；不得引用未在输入中出现的编号。
+3. 地形结论须标注来源：本次分析未接入数字高程模型(DEM)。凡涉及坡度、坡向、汇水、沟道、地形诱发等表述，一律基于监测点填报值，须显式注明"（基于填报值，未经地形数据校验）"，不得包装成地形建模结论。
+4. 缺失不臆测：数据缺失、为空或前后矛盾时，显式提示"需现场复核"，严禁脑补或虚构内容。
+5. 区分事实与推断：明确区分"数据显示的事实"与"你的专家研判推断"，研判性结论要用研判口吻表述，不得伪装成既有数据。
+6. 只输出 JSON：严格按【输出格式】返回一个 JSON 对象，不要输出任何额外文字、解释或 Markdown 代码块标记。"""
+
+# 输出 JSON schema 的字段(见 风险研判提示词.md 第七部分),供 validation 结构校验参考。
+OUTPUT_SCHEMA_KEYS: tuple[str, ...] = (
+    "overall_risk",
+    "dominant_hazard",
+    "common_induce_factors",
+    "trend",
+    "key_points",
+    "recommendations",
+    "data_limitations",
+)
+
+# User Prompt 模板(与 风险研判提示词.md「User Prompt」逐字对齐)。
+# 用 str.replace 注入占位符——不能用 str.format,因第七部分 JSON schema 含字面 { }。
+_USER_TEMPLATE = """# 一、灾圈基本信息（既定事实，系统核算）
+- 灾圈范围：{{zone_geometry_desc}}
+- 灾圈面积：{{zone_area}}
+- 圈内有效监测点总数：{{point_count}}（已剔除已核销 is_hex=1）
+
+# 二、既定事实统计（数字均已核算，禁止改动，只可引用）
+- 灾害类型分布：{{type_distribution}}
+- 规模等级分布：{{scale_distribution}}
+- 预警等级分布：{{warning_level_distribution}}
+- 隐患识别占比：{{hidden_danger_ratio}}
+- 威胁要素汇总：
+  - 威胁人数合计：{{threaten_population_total}}
+  - 威胁户数合计：{{threaten_residents_total}}
+  - 威胁财产合计（万元）：{{threaten_assets_total}}
+
+# 三、空间分析结论（GeoPandas 核算，既定事实）
+- 连片隐患带：{{cluster_summary}}
+- 风险热点区：{{hotspot_summary}}
+- 影响范围：{{affected_extent_summary}}
+
+# 四、重点点位明细（带编号，供研判与溯源；其余点位仅进统计）
+{{key_points_detail}}
+（每条含：monitor_point_code、名称、灾害类型、规模、预警等级、威胁人数/财产、岩性、填报坡度、诱发因素、现状与发展趋势原文）
+
+# 五、待研判语义素材（非结构化，供你综合，非精确统计）
+- 共性诱发因素（系统抽取高频项）：{{common_induce_factors}}
+- 共性岩性特征：{{common_lithology}}
+- 典型现状与趋势描述（节选）：{{typical_status_excerpts}}
+
+# 六、研判任务
+请基于以上数据，完成下列研判，并填入【输出格式】对应字段：
+1. 区域整体风险研判：结合等级/规模分布与空间聚集，给出区域风险定性结论及核心依据。
+2. 主导灾害类型与成因：判断主导灾害类型，结合岩性、填报坡度、诱发因素分析成因（地形相关须按规则3标注"（基于填报值，未经地形数据校验）"）。
+3. 共性诱发因素归纳：提炼本区域主要诱发因素。
+4. 发展趋势判断：综合各点现状与趋势描述，研判区域总体发展趋势，列出依据点位编号。
+5. 重点关注点位识别：列出最需关注的点位（高预警/高规模/高威胁/位于连片带），逐点说明关注原因与针对性建议，必须带 monitor_point_code。
+6. 分级处置建议：给出"紧急 / 近期 / 常态"三级处置、巡查、监测加密建议。
+7. 数据局限说明：列出本次研判的局限（如未接入DEM、地形为填报值、关键字段缺失等）。
+
+# 七、输出格式（严格返回此 JSON 结构，只输出 JSON）
+{
+  "overall_risk": { "level": "", "basis": "" },
+  "dominant_hazard": { "type": "", "cause_analysis": "", "source_note": "" },
+  "common_induce_factors": [],
+  "trend": { "judgment": "", "evidence_points": [] },
+  "key_points": [
+    { "monitor_point_code": "", "reason": "", "suggestion": "" }
+  ],
+  "recommendations": { "urgent": [], "near_term": [], "routine": [] },
+  "data_limitations": []
+}"""
+
+# 注入 prompt 的占位符键(仅这些;assemble_placeholders 的报告专用键被忽略)。
+_PROMPT_KEYS = (
+    "zone_geometry_desc", "zone_area", "point_count",
+    "type_distribution", "scale_distribution", "warning_level_distribution",
+    "hidden_danger_ratio", "threaten_population_total", "threaten_residents_total",
+    "threaten_assets_total", "cluster_summary", "hotspot_summary",
+    "affected_extent_summary", "key_points_detail", "common_induce_factors",
+    "common_lithology", "typical_status_excerpts",
+)
+
+
+def build_user_prompt(placeholders: dict) -> str:
+    """按 User Prompt 模板注入占位符,返回完整 user message。"""
+    text = _USER_TEMPLATE
+    for key in _PROMPT_KEYS:
+        text = text.replace("{{" + key + "}}", str(placeholders.get(key, "")))
+    return text
