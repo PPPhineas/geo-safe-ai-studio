@@ -58,6 +58,21 @@ _USER_TEMPLATE = """# 一、灾圈基本信息（既定事实，系统核算）
 # 五、待研判语义素材（非结构化，供你综合，非精确统计）
 - 共性诱发因素（系统抽取高频项）：{{common_induce_factors}}
 - 共性岩性特征：{{common_lithology}}
+- 变形趋势代码识别：{{deformation_trend_summary}}
+- 明确恶化/发展点位节选：
+{{deformation_points_detail}}
+- 传感器时序趋势识别：{{time_series_summary}}
+- 时序异常/诱发增强点位节选：
+{{time_series_points_detail}}
+- 短期趋势预测：{{trend_forecast_summary}}
+- 中高预测风险点位节选：
+{{trend_forecast_detail}}
+- 监测点位降雨实况：{{time_series_rain_summary}}
+- 各监测点雨情节选：
+{{time_series_rain_detail}}
+
+- 降雨-变形耦合：{{rain_deformation_summary}}
+- 预警历史分析：{{warning_history_summary}}
 - 典型现状与趋势描述（节选）：{{typical_status_excerpts}}
 
 # 六、研判任务
@@ -65,7 +80,7 @@ _USER_TEMPLATE = """# 一、灾圈基本信息（既定事实，系统核算）
 1. 区域整体风险研判：结合等级/规模分布与空间聚集，给出区域风险定性结论及核心依据。
 2. 主导灾害类型与成因：判断主导灾害类型，结合岩性、填报坡度、诱发因素分析成因（地形相关须按规则3标注"（基于填报值，未经地形数据校验）"）。
 3. 共性诱发因素归纳：提炼本区域主要诱发因素。
-4. 发展趋势判断：综合各点现状与趋势描述，研判区域总体发展趋势，列出依据点位编号。
+4. 发展趋势判断：优先依据"变形趋势代码识别"、"传感器时序趋势识别"、"短期趋势预测"、"降雨-变形耦合"及其点位节选，再综合各点现状与趋势描述，研判区域总体发展趋势，列出依据点位编号。
 5. 重点关注点位识别：列出最需关注的点位（高预警/高规模/高威胁/位于连片带），逐点说明关注原因与针对性建议，必须带 monitor_point_code。
 6. 分级处置建议：给出"紧急 / 近期 / 常态"三级处置、巡查、监测加密建议。
 7. 数据局限说明：列出本次研判的局限（如未接入DEM、地形为填报值、关键字段缺失等）。
@@ -83,14 +98,16 @@ _USER_TEMPLATE = """# 一、灾圈基本信息（既定事实，系统核算）
   "data_limitations": []
 }"""
 
-# 注入 prompt 的占位符键(仅这些;assemble_placeholders 的报告专用键被忽略)。
 _PROMPT_KEYS = (
     "zone_geometry_desc", "zone_area", "point_count",
     "type_distribution", "scale_distribution", "warning_level_distribution",
     "hidden_danger_ratio", "threaten_population_total", "threaten_residents_total",
     "threaten_assets_total", "cluster_summary", "hotspot_summary",
     "affected_extent_summary", "key_points_detail", "common_induce_factors",
-    "common_lithology", "typical_status_excerpts",
+    "common_lithology", "deformation_trend_summary", "deformation_points_detail",
+    "time_series_summary", "time_series_points_detail", "trend_forecast_summary",
+    "trend_forecast_detail", "time_series_rain_summary", "time_series_rain_detail",
+    "rain_deformation_summary", "warning_history_summary", "typical_status_excerpts",
 )
 
 

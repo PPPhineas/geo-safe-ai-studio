@@ -21,17 +21,31 @@ from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
-from app.api.schemas import PolygonGeometry, RiskReportRequest, RiskReportResponse
+from app.api.schemas import (
+    PolygonGeometry,
+    RiskReportDetailResponse,
+    RiskReportRequest,
+    RiskReportResponse,
+    RiskReportReviseRequest,
+    RiskReportReviseResponse,
+    RiskReportVersionContent,
+    ReportVersion,
+)
 from app.pipeline.a2ui_builder import build_risk_a2ui
 from app.clients.llm import LLMClient
 from app.pipeline.assembly import assemble_placeholders
 from app.pipeline.cleaning import clean_records
 from app.pipeline.judgement import _parse_json, run_judgement
+from app.pipeline.rain_deformation_coupling import analyze_rain_deformation_coupling
 from app.pipeline.regions import enrich_regions, get_region_maps
 from app.pipeline.selection import select_points_in_zone
 from app.pipeline.spatial import analyze_spatial
 from app.pipeline.statistics import compute_statistics
+from app.pipeline.timeseries import fetch_time_series_for_points
+from app.pipeline.trends import analyze_deformation_trends
 from app.pipeline.validation import validate_judgement
+from app.pipeline.warning_history import analyze_warning_history, fetch_warning_history_for_points
+from app.config import get_settings
 from app.prompts.risk_judgement import SYSTEM_PROMPT, build_user_prompt
 from app.render.charts import render_charts
 from app.render.maps import render_map
@@ -41,15 +55,263 @@ OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "figures"
 MAX_JUDGE_RETRIES = 2
 # 点位超过此阈值时,监测点清单/附录改为 CSV 附件,正文只内联重点点位,避免报告过长。
 LIST_ATTACH_THRESHOLD = 100
+VERSION_INDEX = "versions.json"
+VERSION_DIR = "versions"
+
+
+class ReportRevisionError(RuntimeError):
+    """报告修订失败。"""
 
 
 def _zone_desc(geometry: PolygonGeometry) -> str:
     return f"{len(geometry.coordinates)} 顶点多边形"
 
 
+def _safe_report_dir(report_id: str) -> Path:
+    """返回经路径穿越校验后的报告目录。"""
+    base = OUTPUT_DIR.resolve()
+    target = (OUTPUT_DIR / report_id).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise FileNotFoundError("非法 report_id") from exc
+    return target
+
+
+def _now_iso() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _version_id(report_id: str, version: int) -> str:
+    return f"{report_id}_v{version}"
+
+
+def _infer_assets(report_id: str, target: Path) -> tuple[dict[str, str], dict[str, str]]:
+    """从旧版报告目录推断图件和附件资源 URL。"""
+    figures: dict[str, str] = {}
+    attachments: dict[str, str] = {}
+    if not target.is_dir():
+        return figures, attachments
+    skip = {"report.md", "judgement.json", VERSION_INDEX}
+    for path in sorted(target.iterdir()):
+        if not path.is_file() or path.name in skip:
+            continue
+        url = f"/static/figures/{report_id}/{path.name}"
+        if path.suffix.lower() == ".png":
+            figures[path.stem] = url
+        else:
+            attachments[path.name] = url
+    return figures, attachments
+
+
+def _index_path(target: Path) -> Path:
+    return target / VERSION_INDEX
+
+
+def _read_index(target: Path) -> dict:
+    return json.loads(_index_path(target).read_text(encoding="utf-8"))
+
+
+def _write_index(target: Path, index: dict) -> None:
+    _index_path(target).write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _ensure_version_index(report_id: str) -> dict:
+    """确保报告有版本索引；旧报告目录自动视为 v1。"""
+    target = _safe_report_dir(report_id)
+    if not target.is_dir():
+        raise FileNotFoundError(f"报告 {report_id} 不存在或尚未生成")
+    index_file = _index_path(target)
+    if index_file.exists():
+        return _read_index(target)
+
+    md_path = target / "report.md"
+    if not md_path.exists():
+        raise FileNotFoundError(f"报告 {report_id} 缺少 report.md")
+    figures, attachments = _infer_assets(report_id, target)
+    index = {
+        "report_id": report_id,
+        "current_version": 1,
+        "versions": [
+            {
+                "version_id": _version_id(report_id, 1),
+                "version": 1,
+                "created_at": _now_iso(),
+                "source": "initial",
+                "figures": figures,
+                "attachments": attachments,
+                "change_summary": [],
+            }
+        ],
+    }
+    _write_index(target, index)
+    return index
+
+
+def _register_initial_version(report_id: str) -> None:
+    """生成报告后注册 v1；已有版本索引时保持不变。"""
+    target = _safe_report_dir(report_id)
+    if _index_path(target).exists():
+        return
+    _ensure_version_index(report_id)
+
+
+def _find_version(index: dict, version_id: str) -> dict:
+    for version in index.get("versions", []):
+        if version.get("version_id") == version_id:
+            return version
+    raise FileNotFoundError(f"报告版本 {version_id} 不存在")
+
+
+def _latest_version(index: dict) -> dict:
+    versions = index.get("versions") or []
+    if not versions:
+        raise FileNotFoundError("报告版本索引为空")
+    current = index.get("current_version")
+    for version in versions:
+        if version.get("version") == current:
+            return version
+    return versions[-1]
+
+
+def _version_report_path(target: Path, version: dict) -> Path:
+    if version.get("version") == 1:
+        return target / "report.md"
+    return target / VERSION_DIR / str(version["version_id"]) / "report.md"
+
+
+def _read_version_markdown(target: Path, version: dict) -> str:
+    md_path = _version_report_path(target, version)
+    if not md_path.exists():
+        raise FileNotFoundError(f"报告版本 {version.get('version_id')} 缺少 report.md")
+    return md_path.read_text(encoding="utf-8")
+
+
+def get_risk_report(report_id: str) -> RiskReportDetailResponse:
+    """读取报告版本列表和当前版本正文。"""
+    target = _safe_report_dir(report_id)
+    index = _ensure_version_index(report_id)
+    current = _latest_version(index)
+    markdown = _read_version_markdown(target, current)
+    versions = [ReportVersion(**item) for item in index.get("versions", [])]
+    return RiskReportDetailResponse(
+        report_id=report_id,
+        current_version=int(index.get("current_version", current["version"])),
+        versions=versions,
+        current=RiskReportVersionContent(
+            version_id=current["version_id"],
+            version=current["version"],
+            report_markdown=markdown,
+            figures=current.get("figures") or {},
+            attachments=current.get("attachments") or {},
+        ),
+    )
+
+
+def _build_revision_prompt(base_markdown: str, req: RiskReportReviseRequest) -> str:
+    annotations = [
+        {
+            "block_id": item.block_id,
+            "block_text": item.block_text,
+            "comment": item.comment,
+        }
+        for item in req.annotations
+    ]
+    return (
+        "请根据用户对报告段落的批注，对整篇 Markdown 报告进行二次修订。\n"
+        "要求：\n"
+        "1. 只输出 JSON，不要输出解释文字。\n"
+        "2. JSON 结构必须为 {\"report_markdown\": string, \"change_summary\": string[]}。\n"
+        "3. report_markdown 必须是修订后的完整 Markdown，不要返回 patch 或片段。\n"
+        "4. 保留原报告编号、章节结构、Markdown 表格、图片链接和附件链接。\n"
+        "5. 仅根据批注意见修订，不要虚构新增图件、附件、监测点或未给出的数据。\n\n"
+        "批注列表 JSON：\n"
+        f"{json.dumps(annotations, ensure_ascii=False, indent=2)}\n\n"
+        "原始完整 Markdown：\n"
+        f"{base_markdown}"
+    )
+
+
+def _parse_revision_result(raw: str) -> tuple[str, list[str]]:
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        data = _parse_json(raw)
+    markdown = data.get("report_markdown")
+    if not isinstance(markdown, str) or not markdown.strip():
+        raise ReportRevisionError("LLM 修订结果缺少有效 report_markdown")
+    summary = data.get("change_summary") or []
+    if not isinstance(summary, list):
+        summary = [str(summary)]
+    return markdown, [str(item) for item in summary if str(item).strip()]
+
+
+def revise_risk_report(
+    report_id: str,
+    req: RiskReportReviseRequest,
+    client: LLMClient | None = None,
+) -> RiskReportReviseResponse:
+    """基于指定版本和批注生成完整新版 Markdown。"""
+    if req.mode != "full_markdown":
+        raise ValueError("仅支持 full_markdown 修订模式")
+
+    target = _safe_report_dir(report_id)
+    index = _ensure_version_index(report_id)
+    base_version = _find_version(index, req.base_version_id)
+    base_markdown = _read_version_markdown(target, base_version)
+
+    prompt = _build_revision_prompt(base_markdown, req)
+    raw = (client or LLMClient()).judge(
+        "你是地质灾害风险研判报告编辑。你必须只输出 JSON，且保留报告事实依据。",
+        prompt,
+    )
+    report_markdown, change_summary = _parse_revision_result(raw)
+
+    next_version = max(int(item["version"]) for item in index["versions"]) + 1
+    next_version_id = _version_id(report_id, next_version)
+    version_dir = target / VERSION_DIR / next_version_id
+    version_dir.mkdir(parents=True, exist_ok=False)
+    (version_dir / "report.md").write_text(report_markdown, encoding="utf-8")
+    (version_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "base_version_id": req.base_version_id,
+                "annotations": [item.model_dump() for item in req.annotations],
+                "change_summary": change_summary,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    item = {
+        "version_id": next_version_id,
+        "version": next_version,
+        "created_at": _now_iso(),
+        "source": "revision",
+        "figures": base_version.get("figures") or {},
+        "attachments": base_version.get("attachments") or {},
+        "change_summary": change_summary,
+    }
+    index["versions"].append(item)
+    index["current_version"] = next_version
+    _write_index(target, index)
+
+    return RiskReportReviseResponse(
+        report_id=report_id,
+        version_id=next_version_id,
+        version=next_version,
+        report_markdown=report_markdown,
+        figures=item["figures"],
+        attachments=item["attachments"],
+        change_summary=change_summary,
+    )
+
+
 def _persist_figures(report_id: str, images: dict[str, bytes]) -> dict[str, str]:
     """把图件字节落盘到 output/figures/{report_id}/,返回 {key: /static URL}。"""
-    target = OUTPUT_DIR / report_id
+    target = _safe_report_dir(report_id)
     target.mkdir(parents=True, exist_ok=True)
     figures: dict[str, str] = {}
     for key, data in images.items():
@@ -63,7 +325,7 @@ def _persist_attachment(report_id: str, filename: str, text: str) -> str:
 
     newline="" 关闭换行翻译:csv 已写 \\r\\n,避免 Windows 再把 \\n 翻成 \\r\\n 造成 \\r\\r\\n 空行。
     """
-    target = OUTPUT_DIR / report_id
+    target = _safe_report_dir(report_id)
     target.mkdir(parents=True, exist_ok=True)
     (target / filename).write_text(text, encoding="utf-8-sig", newline="")
     return f"/static/figures/{report_id}/{filename}"
@@ -88,38 +350,35 @@ def _maybe_attach_list(report_id: str, stats: dict, placeholders: dict) -> dict[
 
 def _persist_report(report_id: str, report_md: str, judgement: dict | None = None) -> None:
     """把成稿 report.md(原始 /static 链接)与研判 JSON 落盘,供打包下载。"""
-    target = OUTPUT_DIR / report_id
+    target = _safe_report_dir(report_id)
     target.mkdir(parents=True, exist_ok=True)
     (target / "report.md").write_text(report_md, encoding="utf-8")
     if judgement is not None:
         (target / "judgement.json").write_text(
             json.dumps(judgement, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+    _register_initial_version(report_id)
 
 
-def build_bundle(report_id: str) -> bytes:
+def build_bundle(report_id: str, version_id: str | None = None) -> bytes:
     """把某次报告打包成 zip(report.md 链接改为相对 figures/,含全部图件 + 附件 + 研判 JSON)。
 
     解压后离线打开 report.md 即可正常显示图片与附件。report_id 经路径校验防穿越。
+    version_id 为空时导出最新版本。
     """
-    base = OUTPUT_DIR.resolve()
-    target = (OUTPUT_DIR / report_id).resolve()
-    try:
-        target.relative_to(base)
-    except ValueError as exc:  # 路径穿越
-        raise FileNotFoundError("非法 report_id") from exc
-    if not target.is_dir():
-        raise FileNotFoundError(f"报告 {report_id} 不存在或尚未生成")
+    target = _safe_report_dir(report_id)
+    index = _ensure_version_index(report_id)
+    version = _find_version(index, version_id) if version_id else _latest_version(index)
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        md_path = target / "report.md"
-        if md_path.exists():
-            md = md_path.read_text(encoding="utf-8")
-            md = md.replace(f"/static/figures/{report_id}/", "figures/")
-            zf.writestr("report.md", md)
+        md = _read_version_markdown(target, version)
+        md = md.replace(f"/static/figures/{report_id}/", "figures/")
+        zf.writestr("report.md", md)
         for path in sorted(target.iterdir()):
             if not path.is_file() or path.name == "report.md":
+                continue
+            if path.name == VERSION_INDEX:
                 continue
             if path.name == "judgement.json":
                 zf.write(path, "judgement.json")  # 放根目录
@@ -216,8 +475,14 @@ def generate_risk_report(req: RiskReportRequest) -> RiskReportResponse:
     df = enrich_regions(df, maps)
     stats = compute_statistics(df)
     spatial = analyze_spatial(df, req.geometry)
+    time_series = fetch_time_series_for_points(df) if get_settings().trend_enable_timeseries else None
+    trend = analyze_deformation_trends(df, time_series)
+    warning_history = fetch_warning_history_for_points(df["monitor_point_code"].astype(str).tolist())
+    professional = {}
+    professional.update(analyze_rain_deformation_coupling(time_series))
+    professional.update(analyze_warning_history(warning_history))
 
-    placeholders = assemble_placeholders(stats, spatial, df, missing)
+    placeholders = assemble_placeholders(stats, spatial, df, missing, trend, professional)
     placeholders["report_id"] = report_id
     placeholders["generate_time"] = generate_time
     valid_codes = set(df["monitor_point_code"].astype(str))
@@ -278,9 +543,20 @@ def generate_risk_report_stream(req: RiskReportRequest) -> Iterator[str]:
         stats = compute_statistics(df)
         yield _sse("stage", {"stage": "spatial", "msg": "空间分析:DBSCAN 连片带 / KDE 热点 / 影响范围…"})
         spatial = analyze_spatial(df, req.geometry)
+        time_series = None
+        if get_settings().trend_enable_timeseries:
+            yield _sse("stage", {"stage": "timeseries", "msg": "时序接入:匹配传感器并读取 L1/L2/L3/L4 观测…"})
+            time_series = fetch_time_series_for_points(df)
+        yield _sse("stage", {"stage": "trend", "msg": "变形趋势分析:识别文本趋势 / 时序异常 / 雨量诱发…"})
+        trend = analyze_deformation_trends(df, time_series)
+        yield _sse("stage", {"stage": "professional", "msg": "专业增强:雨量-变形耦合 / 预警历史…"})
+        warning_history = fetch_warning_history_for_points(df["monitor_point_code"].astype(str).tolist())
+        professional = {}
+        professional.update(analyze_rain_deformation_coupling(time_series))
+        professional.update(analyze_warning_history(warning_history))
 
         yield _sse("stage", {"stage": "assembly", "msg": "三层装配:占位符 / 重点点位…"})
-        placeholders = assemble_placeholders(stats, spatial, df, missing)
+        placeholders = assemble_placeholders(stats, spatial, df, missing, trend, professional)
         placeholders["report_id"] = report_id
         placeholders["generate_time"] = generate_time
         valid_codes = set(df["monitor_point_code"].astype(str))

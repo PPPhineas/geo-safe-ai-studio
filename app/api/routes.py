@@ -5,11 +5,21 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
-from app.api.schemas import A2uiActionRequest, RiskReportRequest, RiskReportResponse
+from app.api.schemas import (
+    A2uiActionRequest,
+    RiskReportDetailResponse,
+    RiskReportRequest,
+    RiskReportResponse,
+    RiskReportReviseRequest,
+    RiskReportReviseResponse,
+)
 from app.pipeline.orchestrator import (
+    ReportRevisionError,
     build_bundle,
     generate_risk_report,
     generate_risk_report_stream,
+    get_risk_report,
+    revise_risk_report,
 )
 
 router = APIRouter(tags=["risk-report"])
@@ -60,18 +70,53 @@ def handle_a2ui_action(req: A2uiActionRequest) -> dict:
     return {"status": "acknowledged", "report_id": req.report_id, "action": req.action}
 
 
+@router.get("/risk-report/{report_id}", response_model=RiskReportDetailResponse)
+def read_risk_report(report_id: str) -> RiskReportDetailResponse:
+    """获取报告版本列表和当前最新版本内容。"""
+    try:
+        return get_risk_report(report_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"{type(exc).__name__}: {exc}",
+        ) from exc
+
+
+@router.post("/risk-report/{report_id}/revise", response_model=RiskReportReviseResponse)
+def revise_report(report_id: str, req: RiskReportReviseRequest) -> RiskReportReviseResponse:
+    """根据段落批注生成新的完整 Markdown 报告版本。"""
+    try:
+        return revise_risk_report(report_id, req)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except ReportRevisionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"{type(exc).__name__}: {exc}",
+        ) from exc
+
+
 @router.get("/risk-report/{report_id}/bundle")
-def download_bundle(report_id: str) -> Response:
+def download_bundle(report_id: str, version_id: str | None = None) -> Response:
     """下载报告压缩包(zip):report.md(链接改为相对 figures/)+ 图件 + 附件 CSV + 研判 JSON。
 
     解压后离线打开 report.md 即可显示图片/附件,无需再依赖在线 /static 资源。
     """
     try:
-        data = build_bundle(report_id)
+        data = build_bundle(report_id, version_id=version_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    filename = f"{version_id or report_id}.zip"
     return Response(
         content=data,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{report_id}.zip"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

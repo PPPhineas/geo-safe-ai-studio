@@ -18,15 +18,17 @@ import pandas as pd
 
 from app.config import get_settings
 from app.pipeline.statistics import HIGH_SCALE, HIGH_WARNING
+from app.pipeline.trends import analyze_deformation_trends
 
 _TREND_WORDS = ("加剧", "扩大", "变形", "恶化", "增大", "发展", "活跃")
 _SPLIT_RE = re.compile(r"[，,、;；/\s和及]+")
 
 
-def _key_point_flags(df: pd.DataFrame, spatial: dict) -> pd.Series:
+def _key_point_flags(df: pd.DataFrame, spatial: dict, trend: dict | None = None) -> pd.Series:
     """逐行命中标记 + 排序优先级分。"""
     n = len(df)
     labels = np.asarray(spatial.get("cluster_labels", [-1] * n))
+    trend_scores = trend.get("trend_scores", []) if trend else []
     topn = min(5, n)
     pop_top = set(df["threaten_population"].nlargest(topn).index)
     asset_top = set(df["threaten_assets"].nlargest(topn).index)
@@ -42,18 +44,20 @@ def _key_point_flags(df: pd.DataFrame, spatial: dict) -> pd.Series:
             s += 2
         if pos < len(labels) and labels[pos] >= 0:
             s += 1.5
+        if pos < len(trend_scores) and trend_scores[pos] >= 3:
+            s += 2.5
         if row["is_hidden_danger"] == 1 and any(w in row["current_status"] for w in _TREND_WORDS):
             s += 1.5
         score[i] = s
     return score
 
 
-def select_key_points(df: pd.DataFrame, spatial: dict) -> list[dict]:
+def select_key_points(df: pd.DataFrame, spatial: dict, trend: dict | None = None) -> list[dict]:
     """筛选重点点位明细(固定字段顺序,便于模型解析)。命中任一条件即入选。"""
     if df.empty:
         return []
     settings = get_settings()
-    score = _key_point_flags(df, spatial)
+    score = _key_point_flags(df, spatial, trend)
     selected = df[score > 0].copy()
     selected["_score"] = score[score > 0]
     selected = selected.sort_values("_score", ascending=False)
@@ -196,9 +200,13 @@ def assemble_placeholders(
     spatial: dict,
     df: pd.DataFrame,
     missing_stats: dict,
+    trend: dict | None = None,
+    professional: dict | None = None,
 ) -> dict:
     """装配 prompt 全部占位符 + 报告渲染所需代码侧素材。"""
-    key_points = select_key_points(df, spatial)
+    trend = trend or analyze_deformation_trends(df)
+    professional = professional or {}
+    key_points = select_key_points(df, spatial, trend)
     truncated = bool(key_points and isinstance(key_points[-1], dict) and key_points[-1].get("_truncated"))
     if truncated:
         key_points = key_points[:-1]
@@ -228,6 +236,18 @@ def assemble_placeholders(
         "common_induce_factors": _top_tokens(df["induce_factors"]),
         "common_lithology": _top_tokens(df["lithology"]),
         "typical_status_excerpts": _typical_excerpts(df, key_codes),
+        "deformation_trend_summary": trend["deformation_trend_summary"],
+        "deformation_points_detail": trend["deformation_points_detail"],
+        "time_series_summary": trend.get("time_series_summary", "未接入有效传感器时序数据"),
+        "time_series_points_detail": trend.get("time_series_points_detail", "（无有效时序趋势点位）"),
+        "trend_forecast_summary": trend.get("trend_forecast_summary", "未接入有效传感器时序数据，暂不生成趋势预测。"),
+        "trend_forecast_detail": trend.get("trend_forecast_detail", "（无趋势预测点位）"),
+        "time_series_rain_summary": trend.get("time_series_rain_summary", "未接入有效雨量传感器时序。"),
+        "time_series_rain_detail": trend.get("time_series_rain_detail", "（无）"),
+        "rain_deformation_summary": professional.get("rain_deformation_summary", "未开展降雨-变形耦合分析。"),
+        "rain_deformation_detail": professional.get("rain_deformation_detail", "（无）"),
+        "warning_history_summary": professional.get("warning_history_summary", "未接入有效预警历史。"),
+        "warning_history_detail": professional.get("warning_history_detail", "（无）"),
         # ---- 重点点位明细 ----
         "key_points_detail": _format_key_points_detail(key_points),
         # ---- 报告渲染专用(非 prompt)----

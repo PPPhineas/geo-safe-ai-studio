@@ -19,5 +19,7 @@ venv/
 # 编辑器 / 系统
 .idea/
 .vscode/
+.obsidian/
+docs/.obsidian/
 .DS_Store
 Thumbs.db

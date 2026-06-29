@@ -43,6 +43,69 @@ class RiskReportResponse(BaseModel):
     attachments: dict[str, str] = Field(default_factory=dict, description="附件名 → 资源地址")
 
 
+class ReportAnnotationInput(BaseModel):
+    """报告段落批注输入。"""
+
+    block_id: str = Field(..., min_length=1, description="前端生成的块级锚点")
+    block_text: str = Field(..., min_length=1, description="被批注段落原文")
+    comment: str = Field(..., min_length=1, description="用户批注意见")
+
+
+class RiskReportReviseRequest(BaseModel):
+    """报告二次修订请求。"""
+
+    base_version_id: str = Field(..., min_length=1, description="作为修订基准的版本 ID")
+    annotations: list[ReportAnnotationInput] = Field(
+        ..., min_length=1, description="待应用的段落批注列表"
+    )
+    mode: Literal["full_markdown"] = Field(
+        default="full_markdown", description="修订模式；当前仅支持返回完整 Markdown"
+    )
+
+
+class ReportVersion(BaseModel):
+    """报告版本元数据。"""
+
+    version_id: str
+    version: int
+    created_at: str
+    source: Literal["initial", "revision"]
+    figures: dict[str, str] = Field(default_factory=dict)
+    attachments: dict[str, str] = Field(default_factory=dict)
+    change_summary: list[str] = Field(default_factory=list)
+
+
+class RiskReportVersionContent(BaseModel):
+    """报告版本正文与资源。"""
+
+    version_id: str
+    version: int
+    report_markdown: str
+    figures: dict[str, str] = Field(default_factory=dict)
+    attachments: dict[str, str] = Field(default_factory=dict)
+
+
+class RiskReportDetailResponse(BaseModel):
+    """报告版本详情响应。"""
+
+    report_id: str
+    current_version: int
+    versions: list[ReportVersion]
+    current: RiskReportVersionContent
+
+
+class RiskReportReviseResponse(BaseModel):
+    """报告二次修订响应。"""
+
+    report_id: str
+    version_id: str
+    version: int
+    report_markdown: str
+    figures: dict[str, str] = Field(default_factory=dict)
+    attachments: dict[str, str] = Field(default_factory=dict)
+    change_summary: list[str] = Field(default_factory=list)
+
+
 # ── A2UI 交互界面(Pydantic 模型与 pi-gui src/lib/a2ui/types.ts 契约对齐) ──
 
 
