@@ -1,5 +1,124 @@
 # Changelog — A2UI 接入
+## 2026-06-29 — 固定时序 full 口径并清理分级分支
 
+**变更说明**:
+- 清理 `TIMESERIES_MODE`、`TIMESERIES_MAX_POINTS`、`TIMESERIES_QUERY_TIMEOUT_SECONDS` 相关配置与环境变量示例，不再暴露 fast/off 模式。
+- `app/pipeline/timeseries.py` 固定为全量点位、全 L1/L2/L3/L4 层级口径，并保留 full 口径下的层级并行查询；按 L1/L2/L3/L4 顺序确定性合并结果。
+- `app/pipeline/orchestrator.py` 恢复原有时序接入阶段提示，移除 fast/full/off 分级提示和降级 warn。
+- 删除 `tests/test_timeseries_fast_mode.py`，新增 `tests/test_timeseries_full_contract.py` 覆盖固定 full 口径。
+
+**验证**:
+- `pytest -q tests/test_timeseries_full_contract.py tests/test_charts_layout.py tests/test_a2ui_builder.py tests/test_report_render.py tests/test_trends.py` 通过。
+
+---
+## 2026-06-29 — 趋势折线图图例改为底部布局
+
+**变更说明**:
+- `app/render/charts.py`：最终报告 PNG 中重点点位趋势折线图、雨量-变形时序对照图统一使用底部横向图例，并增加底部边距，减少右侧图例挤占绘图区的问题。
+- `tests/test_charts_layout.py`：覆盖趋势类 Plotly 图表图例布局。
+
+**验证**:
+- `pytest -q tests/test_charts_layout.py tests/test_report_render.py tests/test_trends.py` 通过。
+
+---
+## 2026-06-29 — GUI 支持 A2UI 折线图
+
+**变更说明**:
+- `pi-gui-electron/src/lib/a2ui/catalog/Chart.tsx`：新增 `line` 与 `barLine` 渲染器，注册 ECharts `LineChart`，支持重点点位趋势折线和雨量-变形双轴图。
+- `pi-gui-electron/src/styles/global.css`：为 `chart-line` / `chart-barLine` 增加 300px 图表高度。
+- `app/pipeline/a2ui_builder.py`：恢复 `chart_key_point_trend_lines` 与 `chart_rain_deformation_timeseries` A2UI chart 输出。
+
+**验证**:
+- GUI：`npm run build` 通过。
+- 后端：`pytest -q tests/test_a2ui_builder.py tests/test_report_render.py tests/test_trends.py` 通过。
+
+---
+## 2026-06-29 — 折线图前端兼容显示修复
+
+**问题**：后端已生成 `chart_key_point_trend_lines.png`，报告 Markdown 也已引用，但外部 GUI 可能尝试按 A2UI `chartType=line/barLine` 渲染，旧版渲染器不支持时会显示为空。
+
+**修复**:
+- `app/pipeline/a2ui_builder.py`：暂不把 `chart_key_point_trend_lines`、`chart_rain_deformation_timeseries` 注册为 A2UI chart 组件，避免旧版 GUI 把 PNG 图片替换为空白 ECharts。
+- 折线图和雨量-变形双轴图仍由后端生成 PNG，并通过 Markdown 图片正常进入最终报告与预览报告。
+- `tests/test_a2ui_builder.py`：覆盖 A2UI 不再发布旧版 GUI 不支持的 line/barLine 组件。
+
+**验证**:
+- 最新报告 `b3db3fe83a1d` 已包含 `chart_key_point_trend_lines.png` 与 Markdown 引用。
+
+---
+## 2026-06-29 — 折线图标题显式化
+
+**问题**：折线图 PNG 已生成并写入报告，但位于长段“时序异常/诱发增强点位”之后，缺少独立图题，预览时不容易识别。
+
+**修复**:
+- `docs/灾圈监测点风险研判_报告成稿模板.md`：在 `chart_key_point_trend_lines` 前增加“重点点位变形趋势折线”显式标题。
+
+**验证**:
+- 最新报告 `54022561a64b` 已生成 `chart_key_point_trend_lines.png`，尺寸 1440×960。
+
+---
+## 2026-06-29 — 折线图缺失降级修复
+
+**问题**：部分报告未匹配到有效变形传感器时序时，`chart_key_point_trend_lines` 会被跳过，导致第五章没有折线图。
+
+**修复**:
+- `app/pipeline/trends.py`：新增 `trend_index_series`，基于文本趋势分、时序异常分和预测风险生成“趋势关注指数”轻量折线数据。
+- `app/render/charts.py` 与 `app/pipeline/a2ui_builder.py`：优先使用真实传感器 `preview_series`；缺失时降级使用 `trend_index_series`，确保报告和 ECharts 预览都有折线图。
+- `tests/test_trends.py`、`tests/test_a2ui_builder.py`：覆盖无真实时序时的趋势指数折线输出。
+
+**验证**:
+- `pytest -q`：13 passed。
+- 最小渲染验证输出 `chart_key_point_trend_lines`。
+
+---
+## 2026-06-29 — LLM 切换为内网 ds4flash
+
+**变更说明**:
+- `.env.example`：默认 LLM 地址改为内网 `xinfer` OpenAI 兼容接口，模型为 `deepseek-v4-flash`，温度 0.3；示例文件不写入真实 token。
+- `app/config.py`：新增 `LLM_JSON_MODE` 配置，默认关闭，兼容内网 ds4flash 请求参数。
+- `app/clients/llm.py`：仅在 `LLM_JSON_MODE=True` 时发送 `response_format={"type":"json_object"}`，非流式与流式调用均适配内网接口。
+
+**验证**:
+- `pytest -q`：12 passed。
+- 使用本地 `.env` 对内网 ds4flash 完成非流式与流式最小调用验证。
+
+---
+## 2026-06-29 — 发展趋势新增时序折线图
+
+**变更说明**:
+- `app/pipeline/trends.py`：每个有效时序点位保留一条轻量 `preview_series`，用于报告趋势折线图和前端 ECharts 预览。
+- `app/render/charts.py`：新增 `chart_key_point_trend_lines` 重点点位变形趋势折线图，以及 `chart_rain_deformation_timeseries` 雨量-变形时序对照图。
+- `app/pipeline/a2ui_builder.py` 与 `tests/ui/index.html`：A2UI 增加 `line` / `barLine` 图表数据，预览报告可用 ECharts 渲染折线和柱线组合。
+- 报告模板第五章补充两类时序图件，原分布图继续保留用于趋势概览。
+
+**验证**:
+- `pytest -q`：12 passed。
+
+---
+## 2026-06-29 — 报告预览图表改为 ECharts 渲染
+
+**变更说明**:
+- 最终交付报告仍保留 PNG 图件与 zip 离线包，保证可下载、可离线打开。
+- SSE `a2ui` 事件扩展趋势图表组件：发展趋势状态分布、短期预测风险分布、雨情强度分布。
+- `tests/ui/index.html` 预览报告渲染 Markdown 后，按图件 id 匹配 A2UI chart 组件并替换为 ECharts；无匹配组件时保留原 PNG 降级显示。
+- `tests/test_a2ui_builder.py` 覆盖趋势图表组件输出。
+
+**验证**:
+- `pytest -q`：12 passed。
+
+---
+## 2026-06-29 — 发展趋势研判可视化增强
+
+**变更说明**:
+- `app/render/charts.py`：新增发展趋势状态分布、短期预测风险分布、雨情强度分布 3 类图件，仍复用 Plotly/Kaleido PNG 导出链路。
+- `app/pipeline/orchestrator.py`：报告渲染阶段透传 `trend` 结果，图件生成可读取趋势分布、预测等级和雨情强度。
+- `app/render/report.py` 与 `docs/灾圈监测点风险研判_报告成稿模板.md`：第五章“发展趋势研判”插入趋势图件占位符，保留原文本解释作为图件后的证据说明。
+- `tests/test_report_render.py`：覆盖新增趋势图件占位符替换。
+
+**验证**:
+- `pytest -q`：11 passed。
+
+---
 
 
 ## 2026-06-26 — CH 时序聚合下推：大规模多边形性能优化
@@ -237,3 +356,26 @@ POST /api/v1/a2ui/action
 **已知问题修复**：
 - CSV BOM 导致第一列名变为 `\ufeffmonitor_point_code`，下游 `KeyError`。修复：`_load_mock_csv` 打开文件时用 `encoding="utf-8-sig"` 自动剥离 BOM。
 - `clickhouse-connect` HTTP driver 异常：`selection.py` 和 `regions.py` 中 `ClickHouseClient` import 移入函数内部（仅非 mock 路径/`get_region_maps` 内触发），避免模块级加载 driver 冲突。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

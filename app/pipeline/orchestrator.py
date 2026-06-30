@@ -426,6 +426,7 @@ def _render_response(
     df,
     placeholders: dict,
     judgement: dict,
+    trend: dict | None = None,
 ) -> RiskReportResponse:
     """渲染图件 + 成稿 + 组装响应(数字以代码值覆盖)。图件失败降级,不影响返回。"""
     # 点位/连片带过多 → 转 CSV 附件(在成稿前改写占位符)
@@ -434,7 +435,7 @@ def _render_response(
 
     images: dict[str, bytes] = {}
     try:
-        images.update(render_charts(stats))
+        images.update(render_charts(stats, trend=trend))
     except Exception as exc:  # noqa: BLE001
         placeholders["missing_value_summary"] += f"；统计图渲染失败({type(exc).__name__})"
     try:
@@ -497,7 +498,7 @@ def generate_risk_report(req: RiskReportRequest) -> RiskReportResponse:
             break
     _apply_degrade(judgement, last_errors)
 
-    return _render_response(report_id, req, stats, spatial, df, placeholders, judgement)
+    return _render_response(report_id, req, stats, spatial, df, placeholders, judgement, trend=trend)
 
 
 def _sse(event: str, data: dict) -> str:
@@ -590,12 +591,16 @@ def generate_risk_report_stream(req: RiskReportRequest) -> Iterator[str]:
         _apply_degrade(judgement, last_errors)
 
         # A2UI 交互界面：研判完成、渲染前，将结构化结果转为声明式 UI 组件
-        a2ui = build_risk_a2ui(report_id, judgement, stats, spatial)
+        a2ui = build_risk_a2ui(report_id, judgement, stats, spatial, trend=trend)
         if a2ui is not None:
             yield _sse("a2ui", a2ui.model_dump())
 
         yield _sse("stage", {"stage": "render", "msg": "渲染统计图 / 空间分布图 + 成稿…"})
-        resp = _render_response(report_id, req, stats, spatial, df, placeholders, judgement)
+        resp = _render_response(report_id, req, stats, spatial, df, placeholders, judgement, trend=trend)
         yield _sse("done", resp.model_dump())
     except Exception as exc:  # noqa: BLE001
         yield _sse("error", {"msg": f"{type(exc).__name__}: {exc}"})
+
+
+
+

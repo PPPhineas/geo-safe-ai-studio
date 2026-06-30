@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>灾圈监测点风险研判 · 报告生成</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <style>
   :root { --bg:#f5f6f8; --card:#fff; --line:#e3e6ea; --pri:#2563eb; --ink:#1f2430; --mut:#6b7280; }
   * { box-sizing: border-box; }
@@ -41,6 +42,7 @@
   .gallery figcaption { font-size:12px; color:var(--mut); padding:6px 8px; border-top:1px solid var(--line); }
   .preview { border:1px solid var(--line); border-radius:8px; padding:16px 20px; max-height:560px; overflow:auto; background:#fff; }
   .preview img { max-width:100%; }
+  .preview .echart { width:100%; height:360px; margin:12px 0 18px; border:1px solid var(--line); border-radius:8px; background:#fff; }
   .preview table { border-collapse:collapse; font-size:12px; }
   .preview th, .preview td { border:1px solid var(--line); padding:3px 7px; }
   .summary { display:flex; gap:18px; flex-wrap:wrap; margin-bottom:12px; }
@@ -121,6 +123,7 @@
 const $ = (id) => document.getElementById(id);
 let parsedGeometry = null;   // {kind:'polygon', coordinates:[[lon,lat],...]}
 let lastReport = null;       // {report_markdown, judgement, ...}
+let lastA2ui = null;          // SSE a2ui surface，用于预览报告中把 PNG 图件替换为 ECharts
 
 // ---------- 选取文件 ----------
 const drop = $("drop"), fileInput = $("file");
@@ -184,6 +187,7 @@ async function generate() {
   $("thinkWrap").classList.add("hidden");
   $("thinkPanel").textContent = "";
   $("contentPanel").textContent = "";
+  lastA2ui = null;
   const t0 = Date.now();
   const timer = setInterval(() => { $("status").innerHTML =
     `<span class="spinner"></span> 处理中… ${((Date.now()-t0)/1000).toFixed(0)} 秒`; }, 250);
@@ -246,6 +250,10 @@ function handleEvent({ event, payload }, t0) {
     case "validation":
       appendStage(payload.ok ? "✅ 研判校验通过"
         : "⚠️ 校验未过：" + (payload.errors || []).join("；") + "（将重生成）");
+      break;
+    case "a2ui":
+      lastA2ui = payload;
+      appendStage("📊 已生成交互式预览图表");
       break;
     case "warn":
       appendStage("⚠️ " + payload.msg);
@@ -322,6 +330,82 @@ function mountPreview(host, md) {
   div.className = "preview";
   div.innerHTML = (window.marked ? window.marked.parse(md) : `<pre>${escapeHtml(md)}</pre>`);
   host.appendChild(div);
+  hydratePreviewCharts(div);
+}
+
+function hydratePreviewCharts(root) {
+  if (!window.echarts || !lastA2ui || !Array.isArray(lastA2ui.components)) return;
+  const chartMap = new Map();
+  for (const c of lastA2ui.components) {
+    if (c && c.type === "chart" && c.id && c.props) chartMap.set(c.id, c.props);
+  }
+  if (!chartMap.size) return;
+  for (const img of Array.from(root.querySelectorAll("img"))) {
+    const key = chartKeyFromImage(img);
+    const props = chartMap.get(key);
+    if (!props) continue;
+    const box = document.createElement("div");
+    box.className = "echart";
+    box.setAttribute("role", "img");
+    box.setAttribute("aria-label", props.title || key);
+    img.replaceWith(box);
+    const chart = echarts.init(box);
+    chart.setOption(toEchartsOption(props));
+    const resize = () => chart.resize();
+    window.addEventListener("resize", resize);
+    if (window.ResizeObserver) new ResizeObserver(resize).observe(box);
+  }
+}
+
+function chartKeyFromImage(img) {
+  const alt = (img.getAttribute("alt") || "").trim();
+  if (alt) return alt;
+  const src = img.getAttribute("src") || "";
+  const name = src.split("/").pop() || "";
+  return name.replace(/\.[a-zA-Z0-9]+$/, "");
+}
+
+function toEchartsOption(props) {
+  const title = { text: props.title || "", left: "center", textStyle: { fontSize: 15, fontWeight: 600 } };
+  const tooltip = { trigger: props.chartType === "pie" ? "item" : "axis" };
+  if (props.chartType === "pie") {
+    return {
+      title, tooltip,
+      legend: { bottom: 4, type: "scroll" },
+      series: [{ type: "pie", radius: ["42%", "68%"], center: ["50%", "48%"], data: props.data || [], label: { formatter: "{b}: {c}" } }]
+    };
+  }
+  const categories = props.categories || [];
+  if (props.chartType === "line") {
+    return {
+      title, tooltip,
+      legend: { bottom: 4, type: "scroll" },
+      grid: { left: 52, right: 24, top: 68, bottom: 62, containLabel: true },
+      xAxis: { type: "category", data: categories, axisLabel: { interval: "auto" } },
+      yAxis: { type: "value" },
+      series: (props.series || []).map(s => ({ ...s, type: "line", connectNulls: true, symbolSize: 6, smooth: true }))
+    };
+  }
+  if (props.chartType === "barLine") {
+    const bars = (props.bars || []).map(s => ({ ...s, type: "bar", yAxisIndex: 0, barMaxWidth: 42 }));
+    const lines = (props.lines || []).map(s => ({ ...s, type: "line", yAxisIndex: 1, connectNulls: true, symbolSize: 6, smooth: true }));
+    return {
+      title, tooltip,
+      legend: { bottom: 4, type: "scroll" },
+      grid: { left: 54, right: 58, top: 68, bottom: 62, containLabel: true },
+      xAxis: { type: "category", data: categories, axisLabel: { interval: "auto" } },
+      yAxis: [{ type: "value", name: "雨量(mm)" }, { type: "value", name: "变形值" }],
+      series: [...bars, ...lines]
+    };
+  }
+  const series = (props.series || []).map(s => ({ ...s, type: "bar", barMaxWidth: 48, label: { show: true, position: "top" } }));
+  return {
+    title, tooltip,
+    grid: { left: 52, right: 24, top: 68, bottom: 48, containLabel: true },
+    xAxis: { type: "category", data: categories, axisLabel: { interval: 0 } },
+    yAxis: { type: "value" },
+    series
+  };
 }
 
 // ---------- 下载 ----------
@@ -349,3 +433,5 @@ function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt
 </script>
 </body>
 </html>
+
+

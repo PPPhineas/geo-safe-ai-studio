@@ -191,6 +191,89 @@ def _observation_model(obs: dict) -> str:
     return "unknown"
 
 
+
+
+def _preview_points(points: list[tuple[datetime, float]], limit: int = 30) -> list[dict]:
+    ordered = sorted(points, key=lambda item: item[0])[-limit:]
+    return [
+        {"time": t.isoformat(timespec="seconds"), "value": round(float(v), 3)}
+        for t, v in ordered
+    ]
+
+
+def _human_point_name(value: object) -> str:
+    name = str(value or "").strip()
+    return "" if name.lower() in {"", "nan", "none", "null", "未知", "-", "—"} else name
+
+
+def _point_display_name(code: str, name: object = "") -> str:
+    return _human_point_name(name) or str(code or "").strip()
+
+
+def _point_name_map(df: pd.DataFrame) -> dict[str, str]:
+    if df.empty or "monitor_point_code" not in df.columns:
+        return {}
+    names: dict[str, str] = {}
+    for _, row in df.iterrows():
+        code = str(row.get("monitor_point_code", "")).strip()
+        if not code:
+            continue
+        name = _human_point_name(row.get("monitor_point_name", ""))
+        if name:
+            names[code] = name
+    return names
+
+
+def _apply_point_display_names(series_result: dict, point_names: dict[str, str]) -> None:
+    point_results = series_result.get("point_results") or {}
+    for code, result in point_results.items():
+        if not isinstance(result, dict):
+            continue
+        code_str = str(code)
+        name = point_names.get(code_str, "")
+        display_name = _point_display_name(code_str, name)
+        result["monitor_point_code"] = code_str
+        result["monitor_point_name"] = name
+        result["display_name"] = display_name
+        preview = result.get("preview_series")
+        if isinstance(preview, dict):
+            preview["monitor_point_code"] = code_str
+            preview["monitor_point_name"] = name
+            preview["display_name"] = display_name
+
+
+def _pick_preview_series(
+    metrics: list[dict],
+    grouped: dict[tuple[str, str, str, str], list[tuple[datetime, float]]],
+) -> dict | None:
+    candidates = []
+    for item in metrics:
+        model = item.get("device_model", "unknown")
+        metric = item.get("metric")
+        if model not in RATE_MODELS or metric == "speed":
+            continue
+        key = (model, item.get("kind", ""), item.get("source", ""), metric)
+        points = grouped.get(key) or []
+        if len(points) < 2:
+            continue
+        delta = item.get("delta")
+        if delta is None:
+            values = [v for _, v in points]
+            delta = max(values) - min(values)
+        candidates.append((abs(float(delta or 0)), item, points))
+    if not candidates:
+        return None
+    _, item, points = max(candidates, key=lambda row: row[0])
+    model = item.get("device_model", "unknown")
+    metric = str(item.get("metric", ""))
+    return {
+        "label": f"{MODEL_LABELS.get(model, model)}.{metric}",
+        "device_model": model,
+        "metric": metric,
+        "unit": "",
+        "points": _preview_points(points),
+    }
+
 def _forecast_point(metrics: list[dict], rain_24h: float, rain_72h: float) -> dict:
     """基于近期变化率做短期趋势外推。
 
@@ -417,6 +500,7 @@ def _analyze_point_series(observations: list[dict]) -> dict:
         label = "时序持续发展"
     elif severity == 1:
         label = "诱发因素增强"
+    preview_series = _pick_preview_series(metrics, grouped)
     return {
         "label": label,
         "severity": severity,
@@ -427,6 +511,7 @@ def _analyze_point_series(observations: list[dict]) -> dict:
         "rain_intensity": rain_intensity,
         "max_hourly_intensity": max_hourly_intensity,
         "daily_rainfall": daily_rainfall,
+        "preview_series": preview_series,
         "temp_stats": temp_stats,
         "forecast": forecast,
     }
@@ -519,6 +604,38 @@ def _analyze_time_series_bundle(bundle: dict | None) -> dict:
     }
 
 
+
+
+def _forecast_level_score(forecast: dict | None) -> int:
+    level = (forecast or {}).get("level")
+    return {"高": 2, "中": 1, "低": 0}.get(level, 0)
+
+
+def _trend_index_series(rows: list[tuple], horizon_days: int, max_points: int) -> list[dict]:
+    series = []
+    for combined_score, _, _, row, _, ts_result in rows[:max_points]:
+        code = str(row.get("monitor_point_code", ""))
+        if not code:
+            continue
+        point_name = _human_point_name(row.get("monitor_point_name", ""))
+        display_name = _point_display_name(code, point_name)
+        current = float(combined_score or 0)
+        future = min(5.0, current + _forecast_level_score(ts_result.get("forecast")))
+        series.append(
+            {
+                "code": code,
+                "monitor_point_code": code,
+                "monitor_point_name": point_name,
+                "display_name": display_name,
+                "label": "趋势关注指数",
+                "points": [
+                    {"time": "当前", "value": round(current, 2)},
+                    {"time": f"未来{horizon_days}日", "value": round(future, 2)},
+                ],
+            }
+        )
+    return series
+
 def analyze_deformation_trends(
     df: pd.DataFrame,
     time_series: dict | None = None,
@@ -531,6 +648,8 @@ def analyze_deformation_trends(
         其余字段用于 prompt 和报告渲染。
     """
     series_result = _analyze_time_series_bundle(time_series)
+    point_names = _point_name_map(df)
+    _apply_point_display_names(series_result, point_names)
     if df.empty or "current_status" not in df.columns:
         return {
             "trend_labels": [],
@@ -548,6 +667,7 @@ def analyze_deformation_trends(
             "time_series_limitations": series_result["limitations"],
             "time_series_rain_summary": series_result.get("rain_summary", ""),
             "time_series_rain_detail": series_result.get("rain_detail", ""),
+            "trend_index_series": [],
         }
 
     labels: list[str] = []
@@ -593,6 +713,8 @@ def analyze_deformation_trends(
         summary += " 未识别到明确变形发展或恶化表述。"
     summary += " " + series_result["summary"]
 
+    index_series = _trend_index_series(worsening_rows, get_settings().trend_forecast_days, max_points)
+
     return {
         "trend_labels": labels,
         "trend_scores": [
@@ -611,5 +733,9 @@ def analyze_deformation_trends(
         "time_series_rain_summary": series_result.get("rain_summary", ""),
         "time_series_rain_detail": series_result.get("rain_detail", ""),
         "time_series_point_results": series_result["point_results"],
+        "trend_index_series": index_series,
         "time_series_limitations": series_result["limitations"],
     }
+
+
+

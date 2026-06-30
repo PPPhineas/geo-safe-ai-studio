@@ -27,18 +27,21 @@ def test_analyze_deformation_trends_outputs_summary_and_evidence() -> None:
         [
             {
                 "monitor_point_code": "PT001",
+                "monitor_point_name": "后缘裂缝监测点",
                 "current_status": "持续变形，趋势恶化",
                 "threaten_population": 100,
                 "threaten_assets": 500,
             },
             {
                 "monitor_point_code": "PT002",
+                "monitor_point_name": "前缘稳定监测点",
                 "current_status": "基本稳定",
                 "threaten_population": 10,
                 "threaten_assets": 20,
             },
             {
                 "monitor_point_code": "PT003",
+                "monitor_point_name": "未填报监测点",
                 "current_status": "",
                 "threaten_population": 0,
                 "threaten_assets": 0,
@@ -53,6 +56,9 @@ def test_analyze_deformation_trends_outputs_summary_and_evidence() -> None:
     assert trend["trend_distribution"]["未填报"] == 1
     assert trend["trend_evidence_codes"] == ["PT001"]
     assert "[PT001]" in trend["deformation_points_detail"]
+    assert trend["trend_index_series"][0]["code"] == "PT001"
+    assert trend["trend_index_series"][0]["display_name"] == "后缘裂缝监测点"
+    assert trend["trend_index_series"][0]["label"] == "趋势关注指数"
 
 
 def test_analyze_deformation_trends_uses_time_series_evidence() -> None:
@@ -61,6 +67,7 @@ def test_analyze_deformation_trends_uses_time_series_evidence() -> None:
         [
             {
                 "monitor_point_code": "PT001",
+                "monitor_point_name": "后缘裂缝监测点",
                 "current_status": "基本稳定",
                 "threaten_population": 100,
                 "threaten_assets": 500,
@@ -149,5 +156,14 @@ def test_analyze_deformation_trends_uses_time_series_evidence() -> None:
     assert "PT001" in trend["trend_evidence_codes"]
     assert "GNSS/地表位移.dispsX" in trend["deformation_points_detail"]
     assert trend["time_series_point_results"]["PT001"]["forecast"]["level"] == "高"
+    assert trend["time_series_point_results"]["PT001"]["display_name"] == "后缘裂缝监测点"
+    assert trend["time_series_point_results"]["PT001"]["preview_series"]["display_name"] == "后缘裂缝监测点"
+    assert trend["time_series_point_results"]["PT001"]["preview_series"]["points"]
+    assert trend["time_series_point_results"]["PT001"]["preview_series"]["metric"] == "dispsX"
     assert "PT001" in trend["trend_forecast_detail"]
     assert "预计未来" in trend["trend_forecast_detail"]
+
+
+
+
+

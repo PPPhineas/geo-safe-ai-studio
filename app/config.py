@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = ""
     llm_temperature: float = 0.2  # 低温保稳定
+    llm_json_mode: bool = False  # 兼容内网 xinfer；为 True 时追加 response_format=json_object
 
     # ---- 空间分析参数(投影坐标系下,单位米;见 配套装配与渲染说明.md 二)----
     dbscan_eps_m: float = 500.0
@@ -65,3 +66,8 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """单例配置访问入口。"""
     return Settings()
+
+
+
+
+

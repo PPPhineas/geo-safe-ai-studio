@@ -105,6 +105,11 @@ def render_report(placeholders: dict, judgement: dict, figures: dict[str, str]) 
         "chart_hidden_danger_ratio": _img(figures, "chart_hidden_danger_ratio"),
         "chart_threat_summary": _img(figures, "chart_threat_summary"),
         "map_figure": _img(figures, "map_figure"),
+        "chart_trend_distribution": _img(figures, "chart_trend_distribution"),
+        "chart_trend_forecast_risk": _img(figures, "chart_trend_forecast_risk"),
+        "chart_rain_intensity_distribution": _img(figures, "chart_rain_intensity_distribution"),
+        "chart_key_point_trend_lines": _img(figures, "chart_key_point_trend_lines"),
+        "chart_rain_deformation_timeseries": _img(figures, "chart_rain_deformation_timeseries"),
         # ---- A2UI 组件嵌入（`<!--a2ui:component_id-->` 前端匹配后渲染为交互组件） ----
         "a2ui_risk_card": "<!--a2ui:risk_card-->",
         "a2ui_key_points": "<!--a2ui:key_points-->",
@@ -140,3 +145,5 @@ def render_empty_report(report_id: str, generate_time: str, zone_desc: str) -> s
         f"未触发 AI 研判与图件渲染。如范围有误请调整灾圈几何后重试；"
         f"若确认范围正确，建议核查该区域监测点布设情况。\n"
     )
+
+

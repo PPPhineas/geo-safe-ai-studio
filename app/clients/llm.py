@@ -1,7 +1,7 @@
 """LLM 客户端封装(DeepSeek,OpenAI 兼容)。
 
 调用要点(见 风险研判提示词.md「调用与落地要点」):低温(0–0.3)+ JSON 模式,保证可解析与稳定。
-参数来自 config.Settings(llm_base_url / llm_api_key / llm_model / llm_temperature)。
+参数来自 config.Settings(llm_base_url / llm_api_key / llm_model / llm_temperature / llm_json_mode)。
 """
 
 from __future__ import annotations
@@ -43,12 +43,13 @@ class LLMClient:
         payload = {
             "model": self.settings.llm_model,
             "temperature": self.settings.llm_temperature,
-            "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         }
+        if self.settings.llm_json_mode:
+            payload["response_format"] = {"type": "json_object"}
         last_exc: Exception | None = None
         for attempt in range(retries + 1):
             try:
@@ -72,13 +73,14 @@ class LLMClient:
         payload = {
             "model": self.settings.llm_model,
             "temperature": self.settings.llm_temperature,
-            "response_format": {"type": "json_object"},
             "stream": True,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         }
+        if self.settings.llm_json_mode:
+            payload["response_format"] = {"type": "json_object"}
         try:
             with self._client.stream(
                 "POST", "/chat/completions", json=payload, timeout=httpx.Timeout(300.0)
@@ -106,3 +108,5 @@ class LLMClient:
                         yield ("content", content)
         except httpx.HTTPError as exc:
             raise LLMError(f"LLM 流式调用失败: {exc}") from exc
+
+

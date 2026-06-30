@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -78,6 +79,7 @@ def _point_name_map(df: pd.DataFrame) -> dict[str, list[str]]:
         if name and code:
             mapping[name].append(code)
     return dict(mapping)
+
 
 
 def _sensor_level(sensor_type: str | None) -> str | None:
@@ -366,6 +368,8 @@ def fetch_time_series_for_points(
         "series": {},
         "sensor_count": 0,
         "observation_count": 0,
+        "point_count": int(len(df)),
+        "source_point_count": int(len(df)),
         "limitations": [],
     }
 
@@ -374,6 +378,7 @@ def fetch_time_series_for_points(
         bundle["limitations"].append("监测点缺少名称，无法按现有表结构关联传感器时序数据")
         return bundle
 
+    external_client = client is not None
     try:
         client = client or ClickHouseClient()
         sensors = _query_sensors(client, sorted(point_name_to_codes))
@@ -435,15 +440,13 @@ def fetch_time_series_for_points(
         return bundle
 
     since = datetime.now() - timedelta(days=lookback)
-    series: dict[str, list[dict]] = defaultdict(list)
+    series_by_level: dict[str, dict[str, list[dict]]] = {}
     query_errors: list[str] = []
-    for level, sensor_codes in level_to_sensors.items():
-        try:
-            rows = _query_level_rows_daily(client, level, sensor_codes, since)
-        except Exception as exc:  # noqa: BLE001
-            query_errors.append(f"{level}查询失败:{type(exc).__name__}")
-            continue
-        exploded = _explode_daily_observations(
+
+    def _query_and_explode(level: str, sensor_codes: list[str]) -> tuple[str, dict[str, list[dict]]]:
+        query_client = client if external_client else ClickHouseClient()
+        rows = _query_level_rows_daily(query_client, level, sensor_codes, since)
+        return level, _explode_daily_observations(
             rows,
             level,
             sensor_to_points,
@@ -451,8 +454,27 @@ def fetch_time_series_for_points(
             sensor_name_by_code,
             device_model_by_code,
         )
-        for point_code, observations in exploded.items():
-            series[point_code].extend(observations)
+
+    max_workers = max(1, min(len(level_to_sensors), 4))
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="timeseries") as executor:
+        futures = {
+            executor.submit(_query_and_explode, level, sensor_codes): level
+            for level, sensor_codes in level_to_sensors.items()
+        }
+        for future in as_completed(futures):
+            level = futures[future]
+            try:
+                _, exploded = future.result()
+            except Exception as exc:  # noqa: BLE001
+                query_errors.append(f"{level}查询失败:{type(exc).__name__}")
+                continue
+            series_by_level[level] = exploded
+
+    series: dict[str, list[dict]] = defaultdict(list)
+    for level in TIME_SERIES_TABLES:
+        exploded = series_by_level.get(level) or {}
+        for point_code in sorted(exploded):
+            series[point_code].extend(exploded[point_code])
 
     bundle["enabled"] = True
     bundle["series"] = dict(series)
